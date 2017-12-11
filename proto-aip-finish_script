@@ -1,0 +1,229 @@
+#!/bin/bash
+
+# To run: put the path to the script and the full path of the directory containing the proto-aip folders (source directory) into the terminal
+
+# Finishes making a batch of proto-aips once they are in the required directory structure:
+# Runs FITS to extract metadata
+# Creates master.xml metadata files
+# Bags each proto-aip and validates the bag
+# Tars and zips each proto-aip
+
+# Requires FITS, bagit.py, saxon xslt processor, prepare_bag script, fits-to-master.xsl
+
+# Prior to running the script:
+# Run the proto-aip-structure script to get the proto-aip folders into the right structure
+# Add metadata files to the metadata subfolders
+# Change local paths throughout this script to match your computer
+
+# version of the script
+VERSION=1.0
+
+
+# Check that had the required input in the terminal (the source directory)
+
+if [ -z "$1" ]
+  then echo "Error - need to include the source directory"
+  exit 1
+fi
+
+
+# Check that the source directory path is valid
+
+if [ ! -d "$1" ]
+  then echo "Source directory does not exist"
+  exit 1
+fi
+
+
+# Change the current directory of the terminal to the source directory
+
+cd "$1"
+
+
+# Delete all .DS_Store and Thumbs.db files in the source directory because they can cause errors with bag validation
+
+find . -name '.DS_Store' -type f -delete
+find . -name 'Thumbs.db' -type f -delete
+
+
+# Make a subfolder for the FITS output within each proto-aip folder
+
+for d in *
+  do if [ -d "$d" ]
+    then mkdir "$d"/fits-output
+  fi
+done
+
+
+# Run FITS on each objects subfolder and save the FITS xml for each file to the fits-output subfolder
+# Some programs within fits may print errors in the terminal as part of proper functioning - check them in case of failure of FITS but probably don't need to do anything with them
+# Change local path for 'home/digipres/fits' and 'fits-1.2.0/fits.sh'
+
+echo ""
+echo "Running FITS"
+echo ""
+
+cd '/home/digipres/fits'
+
+for d in "$1"/*
+  do fits-1.2.0/fits.sh -r -i "$d"/objects -o "$d"/fits-output
+done
+
+cd "$1"
+
+
+# Rename the proto-aip folders from aip-id_AIP title to aip-id
+
+for d in *
+  do mv "$d" "${d//_*/}"
+done
+
+
+# Combine all files in the FITS subfolders into one valid XML file
+# Result is named aip-id_combined-fits.xml and saved in the proto-aip folder
+# body.xml is a temporary file used to created combined-fits.xml and then is deleted
+# Change local path for open.xml and close.xml
+
+echo ""
+echo "Generating master.xml files"
+echo ""
+
+for d in *; do
+  cat "$d"/fits-output/*.fits.xml | egrep -v "xml version" > "$d"/body.xml
+  cat '/home/digipres/proto-aip/hargrett/open.xml' "$d"/body.xml '/home/digipres/proto-aip/hargrett/close.xml' > "$d"/${d}_combined-fits.xml
+  rm "$d"/body.xml
+done
+
+
+# Run fits-to-master stylesheet on each combined-fits.xml to create the master.xml files
+# Uses singlefile stylesheet if the objects folder contains 1 file and no subfolders or 0 files and 1 subfolder with 1 file, otherwise uses multifile stylesheet
+# Change local path for saxon9he.jar and fits-to-master.xsl stylesheet
+
+for d in *; do
+  if [ $(find "$d"/objects -maxdepth 1 -type f | wc -l) = 1 ] && [ $(find "$d"/objects -maxdepth 1 -type d | wc -l) = 1 ]
+    then 
+	for i in "$d"/*_combined-fits.xml
+	   do java -cp /home/digipres/saxon/saxon9he.jar net.sf.saxon.Transform -s:"$i" -xsl:/home/digipres/proto-aip/hargrett/fits-to-master_singlefile.xsl -o:${i%_combined-fits.xml}_master.xml
+      	done	
+  elif [ $(find "$d"/objects -maxdepth 1 -type f | wc -l) = 0 ] && [ $(find "$d"/objects -maxdepth 1 -type d | wc -l) = 2  ] && [ $(find "$d"/objects -maxdepth 2 -type f | wc -l) = 1  ]
+    then 
+	for i in "$d"/*_combined-fits.xml
+	   do java -cp /home/digipres/saxon/saxon9he.jar net.sf.saxon.Transform -s:"$i" -xsl:/home/digipres/proto-aip/hargrett/fits-to-master_singlefile.xsl -o:${i%_combined-fits.xml}_master.xml
+	done	
+  else
+	for i in "$d"/*_combined-fits.xml
+	   do java -cp /home/digipres/saxon/saxon9he.jar net.sf.saxon.Transform -s:"$i" -xsl:/home/digipres/proto-aip/hargrett/fits-to-master_multifile.xsl -o:${i%_combined-fits.xml}_master.xml
+	done	
+  fi
+done
+
+# Move master.xml files to the metadata folder
+
+for d in *
+  do mv "$d"/*master.xml "$d"/metadata
+done
+
+
+# Make a folder in the source directory called master-xml and copy all master.xml files to there
+# Can use these to test the accuracy of the transformation and to store with collection documentation
+
+mkdir master-xml
+
+for i in */metadata/*_master.xml
+  do cp "$i" master-xml
+done
+
+
+# Make a folder in the source directory called aip-fits-xml and move all combined-fits.xml files there
+# Now that there are folders in the source directory for master.xml and fits.xml, all d are defined as beginning with harg (for d in harg*) so only proto-aip folders are affected.
+# Change harg to the start of your aip-id for the rest of the script
+# Can store these with the collection documentation
+
+echo ""
+echo "Storing FITS metadata files"
+echo ""
+
+mkdir aip-fits-xml
+
+for d in harg*
+  do mv "$d"/*_combined-fits.xml aip-fits-xml
+done
+
+
+# Rename the FITS xml output for individual files from .fits.xml to _fits.xml to match naming conventions for metadata files
+
+for i in */fits-output/*.fits.xml
+  do mv "$i" "${i//.fits/_fits}"
+done
+
+
+# Moves the FITS xml output for individual files to the metadata folders
+
+
+for d in harg*
+  do mv "$d"/fits-output/* "$d"/metadata
+done
+
+
+# Delete the now-empty fits-output folders
+
+for d in harg*
+  do rmdir "$d"/fits-output
+done
+
+
+# Bag the proto-aips (MD5 manifest and SHA256 manifest)
+# Remove --quiet if you want to see the details on the tool's progress
+# Rename proto-aip folders to add _bag to the end
+
+echo ""
+echo "Bagging proto-aips"
+echo ""
+
+for d in harg*; do
+  bagit.py --md5 --sha256 --quiet "$d"
+  mv "$d" "${d}_bag"
+done
+
+
+# Validate the bags
+# Separate step from previous because combining all 3 into one for-loop caused an error
+
+echo ""
+echo "Bag validation results:"
+echo ""
+
+for d in harg*
+  do bagit.py --validate "$d"
+done
+
+
+# Make directory to save finished proto-aips to
+# Run prepare_bag script on all proto-aip bags and save result in that directory
+# Prepare_bag tars and zips each proto-aip and renames it to include the uncompressed file size 
+# Change local path for prepare_bag
+
+mkdir proto-aips-to-ingest
+
+echo ""
+echo "Running prepare_bag script"
+echo ""
+
+for d in harg* 
+  do '/home/digipres/scripts/prepare_bag' "$d" 'proto-aips-to-ingest'
+done
+
+# Make MD5 manifest of tarred and zipped files for when ingest into ARCHive
+
+echo ""
+echo "Making MD5 manifest"
+echo ""
+
+cd proto-aips-to-ingest
+
+md5sum * > manifest.txt
+
+echo ""
+echo "Script is complete"
+echo "Check that all bags validated"
+echo "Check that no errors from making master.xml - errors mean at least one master.xml is not complete"

@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# To run: put the path to the script and the full path of the directory containing the proto-aip folders (source directory) into the terminal
+
+# Converts a batch of proto-aips into required directory structure:
+# Makes objects subfolder
+# Moves contents of each proto-aip folder to the objects subfolder
+# Makes metadata subfolder
+
+# Prior to running the script:
+# The contents for each proto-aip should be in a folder named 'aip-id_AIP Title'
+# All of the proto-aip folders should be in a single folder
+
+# version of the script
+VERSION=1.0
+
+
+# Check that had the required input in the terminal (the source directory)
+
+if [ -z "$1" ]
+  then echo "Error - need to include the source directory"
+  exit 1
+fi
+
+
+# Check that the source directory path is valid
+
+if [ ! -d "$1" ]
+  then echo "Source directory does not exist"
+  exit 1
+fi
+
+
+# Change the current directory of the terminal to the source directory
+
+cd "$1"
+
+
+# Make a subfolder called objects in each proto-aip folder
+
+for d in *
+  do if [ -d "$d" ]
+    then mkdir "$d"/objects
+  fi
+done
+
+
+# Move the contents of each proto-aip folder into the objects subfolder
+# Known issue: it will give an error message that cannot move objects into itself - ignore the error
+
+for d in *
+  do mv "$d"/* "$d"/objects
+done
+
+
+# Make a subfolder called metadata in each proto-aip folder
+
+for d in *
+  do if [ -d "$d" ]
+    then mkdir "$d"/metadata
+  fi
+done
