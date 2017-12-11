@@ -6,7 +6,7 @@
 	exclude-result-prefixes="fits">
 	<xsl:output method="xml" indent="yes"/>
 	
-	<!--this stylesheet transforms FITS output into master.xml when there is more than one file in the aip-->
+	<!--this stylesheet transforms FITS output into master.xml when there is less than one file in the aip-->
 	<!--see the UGA Libraries AIP Definition for details on the master.xml file-->
 	
 	<!--in the aip section, duplicates are identified using a variable to match pairs of related information (i.e. format name and version) based on the tool that generated the information and then comparing them to later pairs)-->
